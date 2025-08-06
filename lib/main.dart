@@ -125,28 +125,22 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
   Future<void> _fetchPrices() async {
     setState(() => _isLoading = true);
 
-    final url = Uri.parse(
-      'https://metal-price-api-wf1l.onrender.com', // CHANGE THIS TO YOUR REAL URL
-    );
+    final url = Uri.parse('https://stacktracker-api.onrender.com/prices');
 
     try {
       final response = await http.get(url);
       final data = json.decode(response.body);
-
-      if (data.containsKey('rates')) {
+      if (data['success'] == true) {
         final rates = Map<String, num>.from(data['rates']);
-
         setState(() {
           _latestPrices = {
             for (var entry in _metalCodes.entries)
-              entry.key: (rates['USD${entry.value}'] ?? 0).toDouble(),
+              entry.key: (rates[entry.value] ?? 0).toDouble(),
           };
           _isLoading = false;
         });
-      } else if (data.containsKey('error')) {
-        throw Exception(data['error']);
       } else {
-        throw Exception('Unexpected response format');
+        throw Exception(data['error']['message']);
       }
     } catch (e) {
       ScaffoldMessenger.of(
