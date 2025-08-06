@@ -2,7 +2,7 @@ name: stack_tracker
 description: "Track your gold, silver, platinum, and palladium investments with ease."
 publish_to: 'none' # Remove this line if you plan to publish to pub.dev
 
-version: 1.0.1+9
+version: 1.0.1+10
 
 environment:
   sdk: ">=3.8.0 <4.0.0"
