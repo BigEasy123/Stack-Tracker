@@ -45,8 +45,8 @@ android {
     applicationId = "com.yourdomain.stacktracker"
     minSdk = flutter.minSdkVersion
     targetSdk = flutter.targetSdkVersion
-    versionCode = 7 // 👈 Increment this!
-    versionName = "1.0.6" // 👈 Optional, but good practice
+    versionCode = 9 // 👈 Increment this!
+    versionName = "1.0.9" // 👈 Optional, but good practice
 }
 
     buildTypes {
