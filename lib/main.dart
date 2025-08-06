@@ -126,14 +126,16 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
     setState(() => _isLoading = true);
 
     final url = Uri.parse(
-      'https://api.metalpriceapi.com/v1/latest?api_key=$_apiKey&base=USD&currencies=${_metalCodes.values.join(',')}',
+      'https://your-render-app.onrender.com/prices', // CHANGE THIS TO YOUR REAL URL
     );
 
     try {
       final response = await http.get(url);
       final data = json.decode(response.body);
-      if (data['success'] == true) {
+
+      if (data.containsKey('rates')) {
         final rates = Map<String, num>.from(data['rates']);
+
         setState(() {
           _latestPrices = {
             for (var entry in _metalCodes.entries)
@@ -141,8 +143,10 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
           };
           _isLoading = false;
         });
+      } else if (data.containsKey('error')) {
+        throw Exception(data['error']);
       } else {
-        throw Exception(data['error']['message']);
+        throw Exception('Unexpected response format');
       }
     } catch (e) {
       ScaffoldMessenger.of(
