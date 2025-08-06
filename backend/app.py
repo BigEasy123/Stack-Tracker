@@ -14,17 +14,23 @@ API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise Exception("API_KEY environment variable not set")
 
-# You can adjust which metals you want
+# List of metals to fetch
 METALS = ['XAU', 'XAG', 'XPT', 'XPD']
 BASE = 'USD'
+
+@app.route("/")
+def home():
+    return "✅ Metal Price API is live! Visit /prices to get metal rates."
 
 @app.route("/prices")
 def get_prices():
     current_time = time.time()
 
+    # Return cached result if still valid
     if "data" in CACHE and current_time - CACHE["timestamp"] < CACHE_TIMEOUT:
         return jsonify(CACHE["data"])
 
+    # Build API request
     url = f"https://api.metalpriceapi.com/v1/latest?api_key={API_KEY}&base={BASE}&currencies={','.join(METALS)}"
 
     try:
