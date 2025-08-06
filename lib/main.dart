@@ -126,7 +126,7 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
     setState(() => _isLoading = true);
 
     final url = Uri.parse(
-      'https://your-render-app.onrender.com/prices', // CHANGE THIS TO YOUR REAL URL
+      'https://metal-price-api-wf1l.onrender.com', // CHANGE THIS TO YOUR REAL URL
     );
 
     try {
