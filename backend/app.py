@@ -14,7 +14,7 @@ API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise Exception("API_KEY environment variable not set")
 
-METALS = ['XAU', 'XAG', 'XPT', 'XPD']
+METALS = ['USDXXAU', 'USDXXAG', 'USDXXPT', 'USDXXPD']
 BASE = 'USD'
 
 @app.route("/")
