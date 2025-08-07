@@ -33,7 +33,6 @@ def get_prices():
     try:
         response = requests.get(url)
 
-        # Check if response is JSON
         if "application/json" not in response.headers.get("Content-Type", ""):
             return jsonify({"error": "API did not return JSON", "body": response.text}), 500
 
@@ -42,12 +41,13 @@ def get_prices():
         if not data.get("success"):
             return jsonify({"error": data.get("error", "Unknown error")}), 500
 
-        # Invert rates and rename keys to USDX{metal}
-        usd_prices = {}
+        # Invert rates and create top-level keys with bigger prices
+        result = {"success": True}
         for metal, rate in data["rates"].items():
-            usd_prices[f"USDX{metal}"] = 1 / rate if rate else None
-
-        result = {"success": True, "rates": usd_prices}
+            if rate:
+                result[f"USDX{metal}"] = 1 / rate
+            else:
+                result[f"USDX{metal}"] = None
 
         CACHE["data"] = result
         CACHE["timestamp"] = current_time
