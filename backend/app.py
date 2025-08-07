@@ -7,7 +7,8 @@ app = Flask(__name__)
 
 # Cache to prevent repeated API hits
 CACHE = {}
-CACHE_TIMEOUT = 60 * 60 * 8  # 8 hours
+CACHE_TIMEOUT = 5  # 5 seconds for testing
+ # 8 hours
 
 # Get your MetalPriceAPI key from environment variable
 API_KEY = os.getenv("API_KEY")
