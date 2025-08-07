@@ -42,9 +42,10 @@ def get_prices():
         if not data.get("success"):
             return jsonify({"error": data.get("error", "Unknown error")}), 500
 
+        # Invert rates and rename keys to USDX{metal}
         usd_prices = {}
         for metal, rate in data["rates"].items():
-            usd_prices[f"USD{metal}"] = 1 / rate if rate else None
+            usd_prices[f"USDX{metal}"] = 1 / rate if rate else None
 
         result = {"success": True, "rates": usd_prices}
 
