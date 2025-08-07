@@ -211,7 +211,7 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
   Future<void> _fetchPrices() async {
     setState(() => _isLoading = true);
 
-    final url = Uri.parse('https://metal-price-api-wf1l.onrender.com/prices');
+    final url = Uri.parse('https://metal-price-api-wf1l.onrender.com');
 
     try {
       final response = await http.get(url);
