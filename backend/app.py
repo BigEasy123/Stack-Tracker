@@ -35,6 +35,7 @@ def get_prices():
 
     try:
         response = requests.get(url)
+        print("Response text:", response.text)  # Debug: Print raw response for troubleshooting
         data = response.json()
 
         if data.get("success"):
