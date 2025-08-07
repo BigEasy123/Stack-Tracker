@@ -1,9 +1,13 @@
 from flask import Flask, jsonify
+from flask_cors import CORS
 import requests
 import time
 import os
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# ... rest of your code ...
 
 # Cache to prevent repeated API hits
 CACHE = {}
