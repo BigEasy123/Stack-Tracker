@@ -27,6 +27,7 @@ def get_prices():
     current_time = time.time()
 
     # Return cached result if still valid
+    CACHE.clear()
     if "data" in CACHE and current_time - CACHE["timestamp"] < CACHE_TIMEOUT:
         return jsonify(CACHE["data"])
 
