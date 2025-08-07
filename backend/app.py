@@ -41,11 +41,23 @@ def get_prices(base_currency):
         data = response.json()
 
         if data.get("success"):
+            rates = data.get("rates", {})
+
+            # Convert to "USDXAU": price format (inverted for USD per ounce)
+            formatted_rates = {}
+            for metal, value in rates.items():
+                if value != 0:
+                    inverted_price = 1 / value  # get USD per ounce
+                    formatted_rates[f"{base_currency}{metal}"] = inverted_price
+
+            # Save formatted rates to cache
             CACHE[base_currency] = {
-                "data": data,
+                "data": formatted_rates,
                 "timestamp": current_time
             }
-            return jsonify(data)
+
+            return jsonify(formatted_rates)
+
         else:
             return jsonify({"error": data.get("error", "Unknown error")}), 500
 
