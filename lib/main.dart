@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 
 void main() {
@@ -17,7 +18,7 @@ void main() {
 
 class Purchase {
   final String metal;
-  final double quantity;
+  double quantity;
   final double purchasePrice;
   final DateTime date;
 
@@ -27,6 +28,20 @@ class Purchase {
     required this.purchasePrice,
     required this.date,
   });
+
+  Map<String, dynamic> toJson() => {
+    'metal': metal,
+    'quantity': quantity,
+    'purchasePrice': purchasePrice,
+    'date': date.toIso8601String(),
+  };
+
+  static Purchase fromJson(Map<String, dynamic> json) => Purchase(
+    metal: json['metal'],
+    quantity: (json['quantity'] as num).toDouble(),
+    purchasePrice: (json['purchasePrice'] as num).toDouble(),
+    date: DateTime.parse(json['date']),
+  );
 
   double currentPrice(Map<String, double> latestPrices) {
     return latestPrices[metal] ?? 0.0;
@@ -40,6 +55,34 @@ class Purchase {
 
   double profitLoss(Map<String, double> latestPrices) =>
       currentValue(latestPrices) - investedValue();
+}
+
+class PurchaseStack {
+  final String name;
+  final List<Purchase> purchases;
+  double realizedProfitLoss;
+
+  PurchaseStack({
+    required this.name,
+    List<Purchase>? purchases,
+    this.realizedProfitLoss = 0.0,
+  }) : purchases = purchases ?? [];
+
+  Map<String, dynamic> toJson() => {
+    'name': name,
+    'purchases': purchases.map((p) => p.toJson()).toList(),
+    'realizedProfitLoss': realizedProfitLoss,
+  };
+
+  static PurchaseStack fromJson(Map<String, dynamic> json) => PurchaseStack(
+    name: json['name'],
+    purchases: (json['purchases'] as List)
+        .map((e) => Purchase.fromJson(e))
+        .toList(),
+    realizedProfitLoss: json.containsKey('realizedProfitLoss')
+        ? (json['realizedProfitLoss'] as num).toDouble()
+        : 0.0,
+  );
 }
 
 class GoldTrackerApp extends StatelessWidget {
@@ -89,9 +132,8 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
     'Palladium': 'XPD',
   };
 
-  final String _apiKey = 'c510fd073bc6dfb09de4026c71cda31f';
-
-  final List<Purchase> _purchases = [];
+  List<PurchaseStack> _stacks = [];
+  int _activeStackIndex = 0;
   Map<String, double> _latestPrices = {};
   bool _isLoading = true;
 
@@ -99,17 +141,28 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
   final _priceController = TextEditingController();
   String _selectedMetal = 'Gold';
 
+  final _newStackNameController = TextEditingController();
+
   late BannerAd _bannerAd;
   bool _isBannerAdReady = false;
+
+  PurchaseStack get _activeStack =>
+      _activeStackIndex >= 0 && _activeStackIndex < _stacks.length
+      ? _stacks[_activeStackIndex]
+      : PurchaseStack(name: ''); // fallback
+
+  List<Purchase> get _activePurchases => _activeStack.purchases;
 
   @override
   void initState() {
     super.initState();
     _fetchPrices();
+    _loadStacks();
     Timer.periodic(const Duration(minutes: 15), (_) => _fetchPrices());
 
     _bannerAd = BannerAd(
-      adUnitId: 'ca-app-pub-9980659109157314/6900972691', // Test ID
+      adUnitId:
+          'ca-app-pub-9980659109157314/6900972691', // Replace with your own Ad Unit ID
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
@@ -120,6 +173,39 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
         },
       ),
     )..load();
+  }
+
+  @override
+  void dispose() {
+    _quantityController.dispose();
+    _priceController.dispose();
+    _newStackNameController.dispose();
+    _bannerAd.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveStacks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stackList = _stacks.map((s) => json.encode(s.toJson())).toList();
+    await prefs.setStringList('stacks', stackList);
+  }
+
+  Future<void> _loadStacks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final stackList = prefs.getStringList('stacks');
+    if (stackList != null && stackList.isNotEmpty) {
+      setState(() {
+        _stacks = stackList
+            .map((e) => PurchaseStack.fromJson(json.decode(e)))
+            .toList();
+        _activeStackIndex = 0;
+      });
+    } else {
+      setState(() {
+        _stacks = [PurchaseStack(name: 'Default Stack')];
+        _activeStackIndex = 0;
+      });
+    }
   }
 
   Future<void> _fetchPrices() async {
@@ -143,9 +229,11 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
         throw Exception(data['error']['message']);
       }
     } catch (e) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error fetching prices: $e')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error fetching prices: $e')));
+      }
       setState(() {
         _latestPrices = {};
         _isLoading = false;
@@ -159,7 +247,7 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
     if (quantity == null || price == null) return;
 
     setState(() {
-      _purchases.add(
+      _activeStack.purchases.add(
         Purchase(
           metal: _selectedMetal,
           quantity: quantity,
@@ -170,16 +258,69 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
       _quantityController.clear();
       _priceController.clear();
     });
+
+    _saveStacks();
+  }
+
+  void _addStack(String stackName) {
+    if (stackName.trim().isEmpty) return;
+    if (_stacks.any((s) => s.name == stackName)) return;
+
+    setState(() {
+      _stacks.add(PurchaseStack(name: stackName, purchases: []));
+      _activeStackIndex = _stacks.length - 1;
+      _newStackNameController.clear();
+    });
+
+    _saveStacks();
+  }
+
+  void _deleteStack(int index) {
+    if (index < 0 || index >= _stacks.length) return;
+
+    setState(() {
+      _stacks.removeAt(index);
+      if (_activeStackIndex >= _stacks.length) {
+        _activeStackIndex = _stacks.isEmpty ? -1 : _stacks.length - 1;
+      }
+    });
+
+    _saveStacks();
+  }
+
+  double get _totalProfitLoss {
+    if (_activeStackIndex < 0 || _activeStackIndex >= _stacks.length)
+      return 0.0;
+    return _activeStack.purchases.fold(
+      0,
+      (sum, p) => sum + p.profitLoss(_latestPrices),
+    );
+  }
+
+  List<FlSpot> _generateChartSpots() {
+    final purchases = _activePurchases;
+    if (purchases.isEmpty) return [];
+
+    purchases.sort((a, b) => a.date.compareTo(b.date));
+    double cumulative = 0;
+    List<FlSpot> spots = [];
+    for (int i = 0; i < purchases.length; i++) {
+      cumulative += purchases[i].investedValue();
+      spots.add(FlSpot(i.toDouble(), cumulative));
+    }
+    return spots;
   }
 
   Future<void> _exportPurchases() async {
+    if (_activeStackIndex < 0 || _activeStackIndex >= _stacks.length) return;
+
     final directory = await getApplicationDocumentsDirectory();
     final path = '${directory.path}/purchases.csv';
     final file = File(path);
 
     final buffer = StringBuffer();
     buffer.writeln('Metal,Quantity,PurchasePrice,Date');
-    for (final p in _purchases) {
+    for (final p in _activePurchases) {
       buffer.writeln(
         '${p.metal},${p.quantity},${p.purchasePrice},${p.date.toIso8601String()}',
       );
@@ -187,12 +328,16 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
 
     await file.writeAsString(buffer.toString());
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('Exported to: $path')));
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Exported to: $path')));
+    }
   }
 
   Future<void> _importPurchases() async {
+    if (_activeStackIndex < 0 || _activeStackIndex >= _stacks.length) return;
+
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['csv'],
@@ -227,35 +372,110 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
       }
 
       setState(() {
-        _purchases.addAll(newPurchases);
+        _activeStack.purchases.addAll(newPurchases);
       });
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Purchases imported!')));
+      _saveStacks();
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Purchases imported!')));
+      }
     }
   }
 
-  double get _totalProfitLoss =>
-      _purchases.fold(0, (sum, p) => sum + p.profitLoss(_latestPrices));
-
-  List<FlSpot> _generateChartSpots() {
-    _purchases.sort((a, b) => a.date.compareTo(b.date));
-    double cumulative = 0;
-    List<FlSpot> spots = [];
-    for (int i = 0; i < _purchases.length; i++) {
-      cumulative += _purchases[i].investedValue();
-      spots.add(FlSpot(i.toDouble(), cumulative));
-    }
-    return spots;
+  void _deletePurchase(int index) {
+    setState(() {
+      _activeStack.purchases.removeAt(index);
+    });
+    _saveStacks();
   }
 
-  @override
-  void dispose() {
-    _quantityController.dispose();
-    _priceController.dispose();
-    _bannerAd.dispose();
-    super.dispose();
+  void _sellPurchase(int index) {
+    final purchase = _activePurchases[index];
+    final quantityController = TextEditingController();
+    final priceController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Sell Purchase'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Selling from: ${purchase.metal} - ${purchase.quantity.toStringAsFixed(4)} oz @ \$${purchase.purchasePrice.toStringAsFixed(2)}',
+              ),
+              TextField(
+                controller: quantityController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Quantity to Sell',
+                ),
+              ),
+              TextField(
+                controller: priceController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Sell Price per oz',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final sellQty = double.tryParse(quantityController.text);
+                final sellPrice = double.tryParse(priceController.text);
+                if (sellQty == null || sellPrice == null || sellQty <= 0) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Enter valid sell quantity and price'),
+                    ),
+                  );
+                  return;
+                }
+                if (sellQty > purchase.quantity) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Cannot sell more than purchase quantity'),
+                    ),
+                  );
+                  return;
+                }
+
+                setState(() {
+                  final realizedPL =
+                      (sellPrice - purchase.purchasePrice) * sellQty;
+                  _activeStack.realizedProfitLoss += realizedPL;
+
+                  purchase.quantity -= sellQty;
+                  if (purchase.quantity <= 0) {
+                    _activeStack.purchases.removeAt(index);
+                  }
+                });
+
+                _saveStacks();
+                Navigator.pop(context);
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -265,6 +485,7 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Stack Tracker v1.0.0')),
       body: SingleChildScrollView(
+        padding: const EdgeInsets.all(8),
         child: Column(
           children: [
             if (_isLoading)
@@ -282,6 +503,64 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
+
+            Row(
+              children: [
+                Expanded(
+                  child: DropdownButton<int>(
+                    isExpanded: true,
+                    value:
+                        _activeStackIndex >= 0 &&
+                            _activeStackIndex < _stacks.length
+                        ? _activeStackIndex
+                        : null,
+                    hint: const Text('Select Stack'),
+                    items: List.generate(_stacks.length, (index) {
+                      return DropdownMenuItem(
+                        value: index,
+                        child: Text(_stacks[index].name),
+                      );
+                    }),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _activeStackIndex = val);
+                      }
+                    },
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete),
+                  tooltip: 'Delete Current Stack',
+                  onPressed: _activeStackIndex >= 0 && _stacks.length > 1
+                      ? () {
+                          _deleteStack(_activeStackIndex);
+                        }
+                      : null,
+                ),
+              ],
+            ),
+
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _newStackNameController,
+                    decoration: const InputDecoration(
+                      labelText: 'New Stack Name',
+                    ),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    _addStack(_newStackNameController.text);
+                  },
+                  child: const Text('Add Stack'),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
             Padding(
               padding: const EdgeInsets.all(12.0),
               child: Column(
@@ -296,7 +575,11 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
                           ),
                         )
                         .toList(),
-                    onChanged: (val) => setState(() => _selectedMetal = val!),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() => _selectedMetal = val);
+                      }
+                    },
                   ),
                   TextField(
                     controller: _quantityController,
@@ -339,6 +622,7 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
                 ],
               ),
             ),
+
             SizedBox(
               height: 200,
               child: chartSpots.isEmpty
@@ -360,79 +644,116 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
                               sideTitles: SideTitles(
                                 showTitles: true,
                                 interval: 1,
-                                getTitlesWidget: (value, _) {
-                                  int i = value.toInt();
-                                  if (i < _purchases.length) {
-                                    return Text(
-                                      DateFormat.Md().format(
-                                        _purchases[i].date,
-                                      ),
-                                      style: const TextStyle(fontSize: 10),
-                                    );
+                                getTitlesWidget: (value, meta) {
+                                  final idx = value.toInt();
+                                  if (idx < 0 ||
+                                      idx >= _activePurchases.length) {
+                                    return const SizedBox.shrink();
                                   }
-                                  return const SizedBox.shrink();
+                                  final dt = _activePurchases[idx].date;
+                                  return SideTitleWidget(
+                                    axisSide: meta.axisSide,
+                                    child: Text(
+                                      DateFormat.Md().format(dt),
+                                      style: const TextStyle(fontSize: 10),
+                                    ),
+                                  );
                                 },
                               ),
                             ),
                             leftTitles: AxisTitles(
-                              sideTitles: SideTitles(showTitles: false),
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                interval: 50,
+                              ),
                             ),
                           ),
                           lineBarsData: [
                             LineChartBarData(
                               spots: chartSpots,
-                              isCurved: true,
+                              isCurved: false,
                               color: Colors.amber,
-                              dotData: FlDotData(show: false),
                               barWidth: 3,
+                              dotData: FlDotData(show: true),
                             ),
                           ],
                         ),
                       ),
                     ),
             ),
+
+            const SizedBox(height: 12),
+
             ListView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              itemCount: _purchases.length,
+              itemCount: _activePurchases.length,
               itemBuilder: (context, index) {
-                final p = _purchases[index];
+                final p = _activePurchases[index];
                 final profit = p.profitLoss(_latestPrices);
                 return Card(
                   child: ListTile(
                     title: Text(
-                      '${p.metal} - ${p.quantity} oz @ \$${p.purchasePrice.toStringAsFixed(2)}',
+                      '${p.metal} - ${p.quantity.toStringAsFixed(4)} oz @ \$${p.purchasePrice.toStringAsFixed(2)}',
                     ),
                     subtitle: Text(
                       'Date: ${DateFormat.yMd().format(p.date)}\nCurrent: \$${p.currentValue(_latestPrices).toStringAsFixed(2)}',
                     ),
-                    trailing: Text(
-                      '${profit >= 0 ? '+' : '-'}\$${profit.abs().toStringAsFixed(2)}',
-                      style: TextStyle(
-                        color: profit >= 0 ? Colors.green : Colors.red,
-                        fontWeight: FontWeight.bold,
-                      ),
+                    trailing: Wrap(
+                      spacing: 8,
+                      children: [
+                        Text(
+                          '${profit >= 0 ? '+' : '-'}\$${profit.abs().toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: profit >= 0 ? Colors.green : Colors.red,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.sell, color: Colors.blue),
+                          tooltip: 'Sell',
+                          onPressed: () => _sellPurchase(index),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          tooltip: 'Delete Purchase',
+                          onPressed: () => _deletePurchase(index),
+                        ),
+                      ],
                     ),
                   ),
                 );
               },
             ),
+
             const SizedBox(height: 10),
+
             Text(
-              'Total P/L: \$${_totalProfitLoss.toStringAsFixed(2)}',
+              'Unrealized P/L: \$${_totalProfitLoss.toStringAsFixed(2)}',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: _totalProfitLoss >= 0 ? Colors.green : Colors.redAccent,
               ),
             ),
+
+            Text(
+              'Realized P/L: \$${_activeStack.realizedProfitLoss.toStringAsFixed(2)}',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: _activeStack.realizedProfitLoss >= 0
+                    ? Colors.green
+                    : Colors.redAccent,
+              ),
+            ),
+
             if (_isBannerAdReady)
               SizedBox(
                 height: _bannerAd.size.height.toDouble(),
                 width: _bannerAd.size.width.toDouble(),
                 child: AdWidget(ad: _bannerAd),
               ),
-            const SizedBox(height: 16),
           ],
         ),
       ),
