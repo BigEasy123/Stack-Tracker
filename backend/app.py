@@ -7,16 +7,13 @@ import os
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Cache
 CACHE = {}
 CACHE_TIMEOUT = 60 * 60 * 8  # 8 hours
 
-# API key
 API_KEY = os.getenv("API_KEY")
 if not API_KEY:
     raise Exception("API_KEY environment variable not set")
 
-# Metals and base currency
 METALS = ['XAU', 'XAG', 'XPT', 'XPD']
 BASE = 'USD'
 
@@ -36,7 +33,7 @@ def get_prices():
     try:
         response = requests.get(url)
 
-        # Check if it's actually JSON
+        # Check if response is JSON
         if "application/json" not in response.headers.get("Content-Type", ""):
             return jsonify({"error": "API did not return JSON", "body": response.text}), 500
 
@@ -45,13 +42,9 @@ def get_prices():
         if not data.get("success"):
             return jsonify({"error": data.get("error", "Unknown error")}), 500
 
-        # Convert inverse prices to USD per metal
         usd_prices = {}
         for metal, rate in data["rates"].items():
-            if rate != 0:
-                usd_prices[f"USD{metal}"] = 1 / rate
-            else:
-                usd_prices[f"USD{metal}"] = None  # Avoid division by zero
+            usd_prices[f"USD{metal}"] = 1 / rate if rate else None
 
         result = {"success": True, "rates": usd_prices}
 
