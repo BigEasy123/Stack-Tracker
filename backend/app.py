@@ -25,19 +25,22 @@ def home():
 def get_prices():
     current_time = time.time()
 
-    # Serve cached data if still fresh
+    # Serve cached data if fresh
     if "data" in CACHE and current_time - CACHE["timestamp"] < CACHE_TIMEOUT:
         return jsonify(CACHE["data"])
 
     url = f"https://api.metalpriceapi.com/v1/latest?api_key={API_KEY}&base={BASE}&currencies={','.join(METALS)}"
 
     try:
-        response = requests.get(url)
+        response = requests.get(url, timeout=10)
 
-        # If API returned HTML, treat as error
+        # Debug log (optional)
+        print("Status:", response.status_code, "Headers:", response.headers)
+
         if "application/json" not in response.headers.get("Content-Type", ""):
             return jsonify({
                 "error": "API did not return JSON. Check API key or rate limit.",
+                "status_code": response.status_code,
                 "body": response.text[:200]
             }), 500
 
@@ -46,23 +49,28 @@ def get_prices():
         if not data.get("success"):
             return jsonify({"error": data.get("error", "Unknown error")}), 500
 
-        # Convert rates to "USD per metal" (big numbers)
-        result = {"success": True}
+        result = {"success": True, "timestamp": current_time}
         for metal, rate in data["rates"].items():
             if rate:
                 result[f"USDX{metal}"] = round(1 / rate, 6)
             else:
                 result[f"USDX{metal}"] = None
 
-        # Cache result
+        # Only cache on success
         CACHE["data"] = result
         CACHE["timestamp"] = current_time
 
         return jsonify(result)
 
-    except Exception as e:
+    except requests.exceptions.RequestException as e:
+        # API/network error — serve old data if available
+        if "data" in CACHE:
+            return jsonify({
+                "warning": "Using cached data due to API error",
+                "error": str(e),
+                **CACHE["data"]
+            })
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
