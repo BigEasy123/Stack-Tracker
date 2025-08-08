@@ -25,7 +25,7 @@ def home():
 def get_prices():
     current_time = time.time()
 
-    # Serve from cache if fresh
+    # Serve cached data if still fresh
     if "data" in CACHE and current_time - CACHE["timestamp"] < CACHE_TIMEOUT:
         return jsonify(CACHE["data"])
 
@@ -34,33 +34,27 @@ def get_prices():
     try:
         response = requests.get(url)
 
-        # Check for valid JSON
+        # If API returned HTML, treat as error
         if "application/json" not in response.headers.get("Content-Type", ""):
             return jsonify({
-                "error": "API did not return JSON",
-                "body": response.text
+                "error": "API did not return JSON. Check API key or rate limit.",
+                "body": response.text[:200]
             }), 500
 
         data = response.json()
 
-        # Check for API success
         if not data.get("success"):
-            return jsonify({
-                "error": data.get("error", "Unknown error from API")
-            }), 500
+            return jsonify({"error": data.get("error", "Unknown error")}), 500
 
+        # Convert rates to "USD per metal" (big numbers)
         result = {"success": True}
-
-        # Ensure large numbers (USD per metal)
-        for metal, rate in data.get("rates", {}).items():
-            if rate and rate != 0:
-                # Invert so we get USD per 1 unit of metal
-                usd_price = 1 / rate
-                result[f"USDX{metal}"] = usd_price
+        for metal, rate in data["rates"].items():
+            if rate:
+                result[f"USDX{metal}"] = round(1 / rate, 6)
             else:
                 result[f"USDX{metal}"] = None
 
-        # Cache results
+        # Cache result
         CACHE["data"] = result
         CACHE["timestamp"] = current_time
 
