@@ -49,12 +49,18 @@ def get_prices():
         if not data.get("success"):
             return jsonify({"error": data.get("error", "Unknown error")}), 500
 
-        result = {"success": True, "timestamp": current_time}
+        # Build result with a 'rates' dict key for Flutter compatibility
+        result = {
+            "success": True,
+            "timestamp": current_time,
+            "rates": {}
+        }
+
         for metal, rate in data["rates"].items():
             if rate:
-                result[f"USDX{metal}"] = round(1 / rate, 6)
+                result["rates"][f"USD{metal}"] = round(1 / rate, 6)
             else:
-                result[f"USDX{metal}"] = None
+                result["rates"][f"USD{metal}"] = None
 
         # Only cache on success
         CACHE["data"] = result
