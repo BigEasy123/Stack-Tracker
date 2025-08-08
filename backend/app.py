@@ -25,6 +25,7 @@ def home():
 def get_prices():
     current_time = time.time()
 
+    # Serve from cache if fresh
     if "data" in CACHE and current_time - CACHE["timestamp"] < CACHE_TIMEOUT:
         return jsonify(CACHE["data"])
 
@@ -33,22 +34,33 @@ def get_prices():
     try:
         response = requests.get(url)
 
+        # Check for valid JSON
         if "application/json" not in response.headers.get("Content-Type", ""):
-            return jsonify({"error": "API did not return JSON", "body": response.text}), 500
+            return jsonify({
+                "error": "API did not return JSON",
+                "body": response.text
+            }), 500
 
         data = response.json()
 
+        # Check for API success
         if not data.get("success"):
-            return jsonify({"error": data.get("error", "Unknown error")}), 500
+            return jsonify({
+                "error": data.get("error", "Unknown error from API")
+            }), 500
 
-        # Invert rates and create top-level keys with bigger prices
         result = {"success": True}
-        for metal, rate in data["rates"].items():
-            if rate:
-                result[f"USDX{metal}"] = 1 / rate
+
+        # Ensure large numbers (USD per metal)
+        for metal, rate in data.get("rates", {}).items():
+            if rate and rate != 0:
+                # Invert so we get USD per 1 unit of metal
+                usd_price = 1 / rate
+                result[f"USDX{metal}"] = usd_price
             else:
                 result[f"USDX{metal}"] = None
 
+        # Cache results
         CACHE["data"] = result
         CACHE["timestamp"] = current_time
 
@@ -56,6 +68,7 @@ def get_prices():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

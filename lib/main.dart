@@ -221,8 +221,11 @@ class _InvestmentFormPageState extends State<InvestmentFormPage> {
         setState(() {
           _latestPrices = {
             for (var entry in _metalCodes.entries)
-              entry.key: (rates[entry.value] ?? 0).toDouble(),
+              entry.key: (rates.containsKey('USD${entry.value}')
+                  ? (rates['USD${entry.value}'] as num).toDouble()
+                  : 0.0),
           };
+
           _isLoading = false;
         });
       } else {
